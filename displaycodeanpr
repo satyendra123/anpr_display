@@ -5,7 +5,7 @@ import threading
 
 ser = serial.Serial('COM7', baudrate=9600, timeout=0.1)
 
-db_config = {'host': 'localhost','user': 'root','password': '','database': 'paytm_park'}
+db_config = {'host': 'localhost', 'user': 'root', 'password': '', 'database': 'paytm_park'}
 
 def create_db_connection():
     return mysql.connector.connect(**db_config)
@@ -17,36 +17,27 @@ def send_welcome_message_to_display():
     ser.flush()
     sleep(0.1)
 
-def send_data_to_display(veh_number, price):
-    # Clear display 1
+def send_data_to_exit_display(veh_number, price):
     clear_display_message_1 = '|C|1|6|\r\n'
-    print(f"Sending clear display message for display 1: {clear_display_message_1}")
+    clear_display_message_2 = '|C|2|6|\r\n'
+
     ser.write(clear_display_message_1.encode('ascii'))
     ser.flush()
     sleep(0.1)
-
-    # Clear display 2
-    clear_display_message_2 = '|C|2|6|\r\n'
-    print(f"Sending clear display message for display 2: {clear_display_message_2}")
     ser.write(clear_display_message_2.encode('ascii'))
     ser.flush()
     sleep(0.1)
 
-    # Send vehicle number to display 1
     car_number_message = f'|C|1|4|1|1-1-#G{veh_number}|\r\n'
-    print(f"Sending vehicle number to display 1: {car_number_message}")
     ser.write(car_number_message.encode('ascii'))
     ser.flush()
     sleep(0.1)
 
-    # Send price (status) to display 2
     price_message = f'|C|2|4|1|10-0-#GRS-{price}|\r\n'
-    print(f"Sending price to display 2: {price_message}")
     ser.write(price_message.encode('ascii'))
     ser.flush()
     sleep(5)
 
-    # Clear displays again after showing the data
     print("Clearing displays again.")
     ser.write(clear_display_message_1.encode('ascii'))
     ser.flush()
@@ -55,61 +46,75 @@ def send_data_to_display(veh_number, price):
     ser.flush()
     sleep(0.1)
 
-def fetch_data():
+def send_data_to_entry_display(veh_number):
+    clear_display_message_1 = '|C|1|6|\r\n'
+    clear_display_message_2 = '|C|2|6|\r\n'
+
+    ser.write(clear_display_message_1.encode('ascii'))
+    ser.flush()
+    sleep(0.1)
+    ser.write(clear_display_message_2.encode('ascii'))
+    ser.flush()
+    sleep(0.1)
+
+    car_number_message = f'|C|1|4|1|1-1-#G{veh_number}|\r\n'
+    ser.write(car_number_message.encode('ascii'))
+    ser.flush()
+    sleep(3)
+
+    print("Clearing displays again.")
+    ser.write(clear_display_message_1.encode('ascii'))
+    ser.flush()
+    sleep(0.1)
+    ser.write(clear_display_message_2.encode('ascii'))
+    ser.flush()
+    sleep(0.1)
+
+def fetch_data(display_name):
+    display_id = 1 if display_name.upper() == 'ENTRY' else 2
+
     while True:
         conn = create_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
-            select_query = "SELECT id, car_number, tarif_amount FROM display_response WHERE shown_on_screen = 1 AND display_id = 1"
-            cursor.execute(select_query)
+            select_query = "SELECT id, car_number, tarif_amount FROM display_response WHERE shown_on_screen = 1 AND display_id = %s"
+            cursor.execute(select_query, (display_id,))
             result = cursor.fetchone()
             if result:
-                print(f"Fetched Data: {result}")
-
+                print(f"[{display_name}] Fetched Data: {result}")
                 car = result['car_number']
-                tarif = int(result['tarif_amount'])
-                print(f"Vehicle Number: {car}")
-                print(f"Tarif Amount: {tarif}")
 
-                send_data_to_display(car, tarif)
-                send_welcome_message_to_display()
+                if display_name.upper() == 'ENTRY':
+                    send_data_to_entry_display(car)
+                    send_welcome_message_to_display()
+
+                elif display_name.upper() == 'EXIT':
+                    tarif = int(result['tarif_amount'])
+                    send_data_to_exit_display(car, tarif)
+                    send_welcome_message_to_display()
 
                 update_query = "UPDATE display_response SET shown_on_screen = 0 WHERE id = %s"
                 cursor.execute(update_query, (result['id'],))
                 conn.commit()
-                print(f"Status updated to 0 for ID: {result['id']}")
 
                 cursor.execute("SELECT id, shown_on_screen FROM display_response WHERE id = %s", (result['id'],))
                 updated_result = cursor.fetchone()
                 print(f"Confirmed Status After Update: {updated_result}")
-                
             else:
-                print("No row found with shown_on_screen = 1 and display_id = 1. Waiting for new data.")
+                print(f"[{display_name}] No row found. Waiting...")
         except mysql.connector.Error as err:
-            print(f"Database error: {err}")
+            print(f"[{display_name}] Database error: {err}")
         finally:
             cursor.close()
             conn.close()
-
         sleep(5)
 
-def update_status():
-    while True:
-        conn = create_db_connection()
-        cursor = conn.cursor()
-        try:
-            pass
-        except mysql.connector.Error as err:
-            print(f"Database error: {err}")
-        finally:
-            cursor.close()
-            conn.close()
+entry_thread = threading.Thread(target=fetch_data, args=('ENTRY',))
+exit_thread = threading.Thread(target=fetch_data, args=('EXIT',))
 
-        sleep(10)
+entry_thread.start()
+sleep(1)
+exit_thread.start()
 
-fetch_thread = threading.Thread(target=fetch_data)
-update_thread = threading.Thread(target=update_status)
-fetch_thread.start()
-update_thread.start()
-fetch_thread.join()
-update_thread.join()
+entry_thread.join()
+exit_thread.join()
