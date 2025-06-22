@@ -62,7 +62,6 @@ def send_data_to_entry_display(car_number):
     ser.flush()
     sleep(0.1)
 
-
     clear_display_message = '|C|1|6|\r\n'
     print(f"Sending clear display message for display 1: {clear_display_message}")
     ser.write(clear_display_message.encode('ascii'))
