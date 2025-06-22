@@ -5,7 +5,7 @@ import threading
 
 ser = serial.Serial('COM7', baudrate=9600, timeout=0.1)
 
-db_config = {'host': '192.168.40.100','user': 'root','password': '','database': 'paytm_park'}
+db_config = {'host': 'localhost','user': 'root','password': '','database': 'paytm_park'}
 
 def create_db_connection():
     return mysql.connector.connect(**db_config)
